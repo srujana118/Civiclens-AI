@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-bg: #faf9f7;
+    --color-surface: #ffffff;
+    --color-text: #1e1e1e;
+    --color-muted: #6b6b6b;
+    --color-accent: #1e40af;
+    --color-accent-light: #3b82f6;
+    --color-border: #e5e5e5;
+  }
+
+  html {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  body {
+    @apply bg-[#faf9f7] text-[#1e1e1e] antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-[#1e40af] px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#1e3a8a] active:scale-[0.98] disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-[#e5e5e5] bg-white px-5 py-2.5 text-sm font-medium text-[#1e1e1e] transition-all hover:border-[#1e40af] hover:text-[#1e40af] active:scale-[0.98];
+  }
+
+  .card {
+    @apply rounded-xl border border-[#e5e5e5] bg-white shadow-sm;
+  }
+
+  .input-field {
+    @apply w-full rounded-lg border border-[#e5e5e5] bg-white px-4 py-2.5 text-sm text-[#1e1e1e] transition-colors placeholder:text-[#9b9b9b] focus:border-[#1e40af] focus:outline-none focus:ring-2 focus:ring-[#1e40af]/10;
+  }
+
+  .label-text {
+    @apply mb-1.5 block text-sm font-medium text-[#1e1e1e];
+  }
+
+  .nav-link {
+    @apply relative text-sm font-medium text-[#6b6b6b] transition-colors hover:text-[#1e1e1e];
+  }
+
+  .nav-link-active {
+    @apply text-[#1e40af];
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out forwards;
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
