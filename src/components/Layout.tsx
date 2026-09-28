@@ -11,7 +11,6 @@ const navItems = [
   { to: '/trends', label: 'Trends' },
   { to: '/insights', label: 'Insights' },
   { to: '/policy', label: 'Governance' },
-  { to: '/ask', label: 'Ask CivicLens' },
 ];
 
 export default function Layout({

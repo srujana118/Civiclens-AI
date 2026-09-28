@@ -8,7 +8,6 @@ import {
   Eye,
   BarChart3,
   MapPin,
-  MessageSquareText,
 } from 'lucide-react';
 
 const flowSteps = [
@@ -48,13 +47,6 @@ const features = [
     description: 'See where issues cluster and discover geographic patterns across communities.',
     link: '/map',
     linkLabel: 'Open Map',
-  },
-  {
-    icon: MessageSquareText,
-    title: 'Ask CivicLens',
-    description: 'Ask natural-language questions about community reports and get AI-powered answers.',
-    link: '/ask',
-    linkLabel: 'Try It',
   },
 ];
 

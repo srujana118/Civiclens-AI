@@ -8,7 +8,6 @@ import Intelligence from '@/pages/Intelligence';
 import MapPage from '@/pages/MapPage';
 import Trends from '@/pages/Trends';
 import Insights from '@/pages/Insights';
-import AskCivicLens from '@/pages/AskCivicLens';
 import PolicyDashboard from '@/pages/PolicyDashboard';
 
 export default function App() {
@@ -48,11 +47,6 @@ export default function App() {
           <Route
             path="/policy"
             element={<PolicyDashboard />}
-          />
-
-          <Route
-            path="/ask"
-            element={<AskCivicLens />}
           />
 
         </Routes>
