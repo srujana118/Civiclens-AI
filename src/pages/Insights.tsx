@@ -11,9 +11,6 @@ import {
   Zap,
   Calendar,
   Tag,
-  AlertCircle,
-  ChevronDown,
-  ChevronUp,
   FileText,
   CheckCircle2,
 } from 'lucide-react';
@@ -32,12 +29,6 @@ import {
 import { getAffectedInfrastructureTypes } from '@/lib/infrastructure';
 import PageHeader from '@/components/PageHeader';
 import { formatRelative } from '@/lib/utils';
-
-type ExplanationState = {
-  loading: boolean;
-  text: string | null;
-  error: boolean;
-};
 
 type Recommendation = {
   cluster: Cluster;
@@ -150,9 +141,6 @@ export default function Insights() {
   const [expandedCluster, setExpandedCluster] =
     useState<string | null>(null);
 
-  const [explanationStates, setExplanationStates] =
-    useState<Map<string, ExplanationState>>(new Map());
-
   const fetchData = useCallback(async () => {
     setLoading(true);
 
@@ -185,142 +173,13 @@ export default function Insights() {
     fetchData();
   }, [fetchData]);
 
-  const fetchExplanation = useCallback(
-    async (cluster: Cluster) => {
-      const clusterId = cluster.id;
-
-      setExplanationStates((prev) => {
-        const next = new Map(prev);
-
-        next.set(clusterId, {
-          loading: true,
-          text: null,
-          error: false,
-        });
-
-        return next;
-      });
-
-      const catMap = new Map<string, number>();
-
-      cluster.reports.forEach((r) => {
-        const category = getCategory(r);
-
-        catMap.set(
-          category,
-          (catMap.get(category) ?? 0) + 1,
-        );
-      });
-
-      const payload = {
-        clusterId,
-        reportCount: cluster.reportCount,
-        centerLocation: cluster.centerLocation,
-        dominantCategory: cluster.dominantCategory,
-        issueTypes: cluster.issueTypes,
-        averageUrgency: cluster.averageUrgency,
-        recentCount: cluster.recentCount,
-        dateRangeStart: cluster.dateRangeStart,
-        dateRangeEnd: cluster.dateRangeEnd,
-        priorityLevel: cluster.priorityLevel,
-        priorityScore: cluster.priorityScore,
-        priorityReason: cluster.priorityReason,
-
-        categoryBreakdown: [...catMap.entries()].map(
-          ([category, count]) => ({
-            category,
-            count,
-          }),
-        ),
-      };
-
-      try {
-        const functionUrl =
-          `${import.meta.env.VITE_SUPABASE_URL}` +
-          `/functions/v1/explain-cluster`;
-
-        const response = await fetch(functionUrl, {
-          method: 'POST',
-
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization:
-              `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-
-          body: JSON.stringify({
-            clusters: [payload],
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const explanation = data.explanations?.[0];
-
-          if (explanation?.explanation) {
-            setExplanationStates((prev) => {
-              const next = new Map(prev);
-
-              next.set(clusterId, {
-                loading: false,
-                text: explanation.explanation,
-                error: false,
-              });
-
-              return next;
-            });
-
-            return;
-          }
-        }
-
-        setExplanationStates((prev) => {
-          const next = new Map(prev);
-
-          next.set(clusterId, {
-            loading: false,
-            text: null,
-            error: true,
-          });
-
-          return next;
-        });
-      } catch {
-        setExplanationStates((prev) => {
-          const next = new Map(prev);
-
-          next.set(clusterId, {
-            loading: false,
-            text: null,
-            error: true,
-          });
-
-          return next;
-        });
-      }
+  const toggleCluster = useCallback(
+    (clusterId: string) => {
+      setExpandedCluster((prev) =>
+        prev === clusterId ? null : clusterId,
+      );
     },
     [],
-  );
-
-  const toggleCluster = useCallback(
-    (clusterId: string, cluster: Cluster) => {
-      setExpandedCluster((prev) => {
-        if (prev === clusterId) {
-          return null;
-        }
-
-        setExplanationStates((states) => {
-          if (!states.has(clusterId)) {
-            fetchExplanation(cluster);
-          }
-
-          return states;
-        });
-
-        return clusterId;
-      });
-    },
-    [fetchExplanation],
   );
 
   /*
@@ -339,8 +198,7 @@ export default function Insights() {
   const totalHotspotReports = useMemo(
     () =>
       clusters.reduce(
-        (sum, cluster) =>
-          sum + cluster.reportCount,
+        (sum, cluster) => sum + cluster.reportCount,
         0,
       ),
     [clusters],
@@ -589,8 +447,8 @@ export default function Insights() {
                 <p className="text-sm text-[#6b6b6b]">
                   Clusters detected from real citizen
                   reports. Click a hotspot to view its
-                  AI-generated explanation, priority,
-                  evidence and infrastructure context.
+                  priority, evidence and infrastructure
+                  context.
                 </p>
 
                 {clusters.map((cluster, index) => {
@@ -624,11 +482,6 @@ export default function Insights() {
                   const isExpanded =
                     expandedCluster === cluster.id;
 
-                  const explanation =
-                    explanationStates.get(
-                      cluster.id,
-                    );
-
                   return (
                     <div
                       key={cluster.id}
@@ -644,10 +497,7 @@ export default function Insights() {
                       <button
                         type="button"
                         onClick={() =>
-                          toggleCluster(
-                            cluster.id,
-                            cluster,
-                          )
+                          toggleCluster(cluster.id)
                         }
                         className="flex w-full items-center gap-2.5 border-b border-[#e5e5e5] bg-[#1e40af]/5 px-6 py-4 text-left transition-colors hover:bg-[#1e40af]/10"
                       >
@@ -690,9 +540,13 @@ export default function Insights() {
                         </span>
 
                         {isExpanded ? (
-                          <ChevronUp className="h-5 w-5 flex-shrink-0 text-[#6b6b6b]" />
+                          <span className="text-lg text-[#6b6b6b]">
+                            −
+                          </span>
                         ) : (
-                          <ChevronDown className="h-5 w-5 flex-shrink-0 text-[#6b6b6b]" />
+                          <span className="text-lg text-[#6b6b6b]">
+                            +
+                          </span>
                         )}
 
                       </button>
@@ -701,66 +555,6 @@ export default function Insights() {
 
                       {isExpanded && (
                         <div className="space-y-5 p-6">
-
-                          {/* AI EXPLANATION */}
-
-                          {explanation?.loading ? (
-                            <div className="rounded-lg bg-[#1e40af]/5 px-4 py-4">
-
-                              <div className="flex items-center gap-2 text-xs font-medium text-[#1e40af]">
-                                <Sparkles className="h-3 w-3" />
-                                AI Insight
-                              </div>
-
-                              <div className="mt-2 flex items-center gap-2 text-sm text-[#6b6b6b]">
-                                <Loader2 className="h-4 w-4 animate-spin text-[#1e40af]" />
-                                Generating AI insight...
-                              </div>
-
-                            </div>
-                          ) : explanation?.text ? (
-                            <div className="rounded-lg bg-[#1e40af]/5 px-4 py-4">
-
-                              <div className="flex items-center gap-1.5 text-xs font-medium text-[#1e40af]">
-                                <Sparkles className="h-3 w-3" />
-                                AI Insight
-                              </div>
-
-                              <p className="mt-1.5 text-sm text-[#1e1e1e]">
-                                {explanation.text}
-                              </p>
-
-                            </div>
-                          ) : explanation?.error ? (
-                            <div className="rounded-lg bg-yellow-50 px-4 py-4">
-
-                              <div className="flex items-center gap-1.5 text-xs font-medium text-yellow-700">
-                                <AlertCircle className="h-3 w-3" />
-                                AI Insight
-                              </div>
-
-                              <p className="mt-1.5 text-sm text-yellow-700">
-                                AI insight temporarily
-                                unavailable. The
-                                statistics below are
-                                calculated from real
-                                report data.
-                              </p>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  fetchExplanation(
-                                    cluster,
-                                  )
-                                }
-                                className="mt-2 text-xs font-medium text-yellow-800 underline"
-                              >
-                                Retry
-                              </button>
-
-                            </div>
-                          ) : null}
 
                           {/* DEVELOPMENT PRIORITY */}
 
@@ -927,7 +721,7 @@ export default function Insights() {
                             </div>
                           </div>
 
-                          {/* DATE RANGE */}
+                          {/* DATE RANGE / ISSUE TYPES */}
 
                           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
 

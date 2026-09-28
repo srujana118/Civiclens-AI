@@ -1,10 +1,12 @@
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-type ClusterStats = {
+type Cluster = {
+  clusterId: string;
   reportCount: number;
   centerLocation: string;
   dominantCategory: string;
@@ -13,152 +15,271 @@ type ClusterStats = {
   recentCount: number;
   dateRangeStart: string;
   dateRangeEnd: string;
-  categoryBreakdown: { category: string; count: number }[];
+  priorityLevel: string;
+  priorityScore: number;
+  priorityReason: string;
+  categoryBreakdown: {
+    category: string;
+    count: number;
+  }[];
 };
 
-const GEMINI_MODEL = "gemini-3.6-flash";
-const MAX_RETRIES = 2;
-const BASE_DELAY_MS = 2000;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function jsonResponse(
+  body: unknown,
+  status = 200,
+) {
+  return new Response(
+    JSON.stringify(body),
+    {
+      status,
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json",
+      },
+    },
+  );
 }
 
-function buildPrompt(cluster: ClusterStats): string {
-  const catBreakdown = cluster.categoryBreakdown
-    .map((c) => `${c.category}: ${c.count} reports`)
-    .join(", ");
-  const issueTypesStr = cluster.issueTypes.length > 0 ? cluster.issueTypes.join(", ") : "not specified";
-
-  return `You are a civic intelligence analyst. Write a concise, factual explanation of a detected geographic hotspot. Use ONLY the statistics provided below — do not invent or estimate any numbers. Write exactly 2-3 sentences in plain language. Do not use markdown, headers, labels, or formatting — just the explanation text.
-
-Detected cluster statistics (calculated by the application):
-- Location: ${cluster.centerLocation}
-- Total reports in cluster: ${cluster.reportCount}
-- Dominant issue category: ${cluster.dominantCategory}
-- Category breakdown: ${catBreakdown}
-- Issue types: ${issueTypesStr}
-- Average urgency: ${cluster.averageUrgency}
-- Recent reports (last 7 days): ${cluster.recentCount}
-- Date range: ${cluster.dateRangeStart} to ${cluster.dateRangeEnd}
-
-Write the explanation now. Begin directly with the first sentence. Example: "7 citizen reports are concentrated within this area, with pothole-related issues representing the largest share. The average urgency is High, with 4 reports filed in the past week alone, suggesting an active and worsening situation."`;
-}
-
-function cleanText(text: string): string {
-  let cleaned = text.trim();
-  cleaned = cleaned.replace(/^#+\s*/gm, "");
-  cleaned = cleaned.replace(/^\*+\**/gm, "");
-  cleaned = cleaned.replace(/^"|"$/g, "");
-  cleaned = cleaned.replace(/^(Response:|Explanation:|Summary:)\s*/i, "");
-  return cleaned.trim();
-}
-
-function extractRetryDelayMs(errorBody: string): number {
-  const match = errorBody.match(/"retryDelay":\s*"(\d+)s"/);
-  if (match) {
-    return parseInt(match[1], 10) * 1000 + 500;
-  }
-  return BASE_DELAY_MS;
-}
-
-async function explainCluster(cluster: ClusterStats): Promise<string> {
-  const apiKey = Deno.env.get("GEMINI_API_KEY");
-  if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not configured");
-  }
-
-  const prompt = buildPrompt(cluster);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-  const body = {
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.4, maxOutputTokens: 1024 },
-  };
-
-  let lastError = "";
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify(body),
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      const candidate = data?.candidates?.[0];
-      const finishReason = candidate?.finishReason;
-      const text = candidate?.content?.parts?.[0]?.text;
-
-      if (!text) {
-        throw new Error(`Gemini returned no content (finishReason: ${finishReason ?? "unknown"})`);
-      }
-
-      const cleaned = cleanText(text);
-      if (!cleaned || cleaned.length < 20) {
-        throw new Error(`Gemini returned invalid explanation text (finishReason: ${finishReason ?? "unknown"})`);
-      }
-
-      return cleaned;
-    }
-
-    const errorText = await response.text();
-    lastError = `Gemini API error (${response.status}): ${errorText}`;
-    console.error(`explain-cluster: attempt ${attempt}/${MAX_RETRIES} — ${lastError.slice(0, 200)}`);
-
-    // Only retry on 429/503 — and respect the retryDelay from the API
-    if (response.status !== 429 && response.status !== 503) {
-      throw new Error(lastError);
-    }
-
-    if (attempt < MAX_RETRIES) {
-      const delay = extractRetryDelayMs(errorText);
-      console.error(`explain-cluster: retrying in ${delay}ms`);
-      await sleep(delay);
-    }
-  }
-
-  throw new Error(lastError);
-}
-
-Deno.serve(async (req: Request) => {
+Deno.serve(async (req) => {
+  // CORS
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
+    return new Response("ok", {
+      headers: corsHeaders,
+    });
+  }
+
+  if (req.method !== "POST") {
+    return jsonResponse(
+      {
+        error: "Method not allowed",
+      },
+      405,
+    );
   }
 
   try {
-    const body = await req.json();
+    const apiKey =
+      Deno.env.get("GEMINI_API_KEY");
 
-    if (!Array.isArray(body.clusters)) {
-      return new Response(
-        JSON.stringify({ error: "clusters array is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    if (!apiKey) {
+      console.error(
+        "GEMINI_API_KEY is missing",
+      );
+
+      return jsonResponse(
+        {
+          error:
+            "GEMINI_API_KEY is not configured in Supabase.",
+        },
+        500,
       );
     }
 
-    const explanations: { clusterId: string; explanation: string; error?: string }[] = [];
+    const body = await req.json();
 
-    for (const cluster of body.clusters as (ClusterStats & { clusterId: string })[]) {
-      try {
-        const explanation = await explainCluster(cluster);
-        explanations.push({ clusterId: cluster.clusterId, explanation });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        console.error(`explain-cluster: failed for cluster ${cluster.clusterId}: ${message.slice(0, 200)}`);
-        explanations.push({ clusterId: cluster.clusterId, explanation: "", error: message });
-      }
+    const clusters: Cluster[] =
+      Array.isArray(body?.clusters)
+        ? body.clusters
+        : [];
+
+    if (clusters.length === 0) {
+      return jsonResponse(
+        {
+          error: "No cluster data supplied.",
+        },
+        400,
+      );
     }
 
-    return new Response(
-      JSON.stringify({ explanations }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    const explanations: {
+      clusterId: string;
+      explanation: string;
+    }[] = [];
+
+    for (const cluster of clusters) {
+      const categoryBreakdown =
+        cluster.categoryBreakdown
+          ?.map(
+            (item) =>
+              `${item.category}: ${item.count}`,
+          )
+          .join(", ") ||
+        "Not available";
+
+      const issueTypes =
+        cluster.issueTypes?.join(", ") ||
+        "Not specified";
+
+      const prompt = `
+You are CivicLens AI, a civic infrastructure intelligence system.
+
+Analyze the supplied citizen-report hotspot.
+
+Use ONLY the supplied information.
+Do not invent causes, statistics, locations, infrastructure conditions, or facts.
+Do not mention AI.
+Do not give generic recommendations.
+
+Explain:
+1. What the concentration of reports shows.
+2. What type of civic issue is concentrated there.
+3. Why the hotspot has its current priority level.
+
+HOTSPOT DATA
+
+Location:
+${cluster.centerLocation}
+
+Total reports:
+${cluster.reportCount}
+
+Dominant category:
+${cluster.dominantCategory}
+
+Issue types:
+${issueTypes}
+
+Average urgency:
+${cluster.averageUrgency}
+
+Recent reports:
+${cluster.recentCount}
+
+Date range:
+${cluster.dateRangeStart} to ${cluster.dateRangeEnd}
+
+Priority level:
+${cluster.priorityLevel}
+
+Priority score:
+${cluster.priorityScore}/100
+
+Priority reason:
+${cluster.priorityReason}
+
+Category breakdown:
+${categoryBreakdown}
+
+Write exactly 2 concise sentences.
+`;
+
+      const response =
+        await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      text: prompt,
+                    },
+                  ],
+                },
+              ],
+
+              generationConfig: {
+                temperature: 0.2,
+                maxOutputTokens: 200,
+              },
+            }),
+          },
+        );
+
+      const responseText =
+        await response.text();
+
+      if (!response.ok) {
+        console.error(
+          "Gemini API error:",
+          response.status,
+          responseText,
+        );
+
+        return jsonResponse(
+          {
+            error:
+              `Gemini API error ${response.status}`,
+            details: responseText,
+          },
+          500,
+        );
+      }
+
+      let geminiData: any;
+
+      try {
+        geminiData =
+          JSON.parse(responseText);
+      } catch {
+        console.error(
+          "Invalid Gemini response:",
+          responseText,
+        );
+
+        throw new Error(
+          "Gemini returned an invalid response.",
+        );
+      }
+
+      const explanation =
+        geminiData
+          ?.candidates?.[0]
+          ?.content?.parts
+          ?.map(
+            (part: {
+              text?: string;
+            }) =>
+              part.text ?? "",
+          )
+          .join("")
+          .trim();
+
+      if (!explanation) {
+        console.error(
+          "Empty Gemini response:",
+          JSON.stringify(
+            geminiData,
+          ),
+        );
+
+        throw new Error(
+          "Gemini returned no explanation.",
+        );
+      }
+
+      explanations.push({
+        clusterId:
+          cluster.clusterId,
+
+        explanation,
+      });
+    }
+
+    return jsonResponse({
+      explanations,
+    });
+  } catch (error) {
+    console.error(
+      "explain-cluster error:",
+      error,
     );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("explain-cluster error:", message);
-    return new Response(
-      JSON.stringify({ error: message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+
+    return jsonResponse(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to generate AI insight.",
+      },
+      500,
     );
   }
 });
