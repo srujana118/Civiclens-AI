@@ -52,7 +52,7 @@ export const REPORT_CATEGORIES = [
   'Noise',
   'Public Safety',
   'Water',
-  'Parks',
+  'Parks & Recreational Facilities',
   'Traffic',
   'Other',
 ] as const;
